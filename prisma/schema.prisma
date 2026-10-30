@@ -1,0 +1,150 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model OAuthAccount {
+  id                   String              @id @default(uuid())
+  googleId             String              @unique
+  email                String?
+  name                 String?
+  avatarUrl            String?
+  channelId            String?
+  channelTitle         String?
+  channelThumbnail     String?
+  encryptedAccessToken String?
+  encryptedRefreshToken String?
+  tokenExpiresAt       DateTime?
+  scope                String?
+  clientConfigId       String?
+  clientConfig         GoogleClientConfig? @relation(fields: [clientConfigId], references: [id], onDelete: SetNull)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  @@index([clientConfigId])
+}
+
+model GoogleClientConfig {
+  id           String         @id @default(uuid())
+  name         String
+  clientId     String
+  clientSecret String
+  redirectUri  String         @default("http://localhost:3000/api/auth/google/callback")
+  isDefault    Boolean        @default(false)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  accounts     OAuthAccount[]
+
+  @@index([isDefault])
+}
+
+model Channel {
+  id               String             @id @default(uuid())
+  youtubeChannelId String             @unique
+  title            String
+  thumbnailUrl     String?
+  description      String?
+  customUrl        String?
+  subscriberCount  Int?
+  videoCount       Int?
+  lastSyncedAt     DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  videos           Video[]
+  actions          EngagementAction[]
+
+  @@index([title])
+  @@index([lastSyncedAt])
+}
+
+model Video {
+  id             String             @id @default(uuid())
+  youtubeVideoId String             @unique
+  channelId      String
+  channel        Channel            @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  title          String
+  description    String?
+  url            String
+  publishedAt    DateTime
+  checkedAt      DateTime           @default(now())
+  thumbnailUrl   String?
+  viewCount      Int?
+  likeCount      Int?
+  commentCount   Int?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  actions        EngagementAction[]
+
+  @@index([channelId])
+  @@index([publishedAt])
+}
+
+model CommentTemplate {
+  id        String   @id @default(uuid())
+  name      String
+  content   String
+  category  String?  @default("Geral")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+model EngagementAction {
+  id          String    @id @default(uuid())
+  channelId   String
+  channel     Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  videoId     String?
+  video       Video?    @relation(fields: [videoId], references: [id], onDelete: SetNull)
+  type        String    @default("COMMENT")
+  status      String    @default("PREPARED")
+  commentText String?
+  notes       String?
+  confirmedAt DateTime?
+  executedAt  DateTime?
+  error       String?
+  createdAt   DateTime  @default(now())
+
+  @@index([channelId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model SyncJob {
+  id             String    @id @default(uuid())
+  type           String    @default("SUBSCRIBERS")
+  status         String    @default("PENDING")
+  processedCount Int       @default(0)
+  errorCount     Int       @default(0)
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  error          String?
+  metadata       String?
+  createdAt      DateTime  @default(now())
+
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  action    String
+  entity    String?
+  entityId  String?
+  details   String?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([action])
+  @@index([createdAt])
+}

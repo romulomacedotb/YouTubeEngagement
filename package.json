@@ -1,0 +1,30 @@
+{
+  "name": "youtube-engagement-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "YouTube Subscriber Engagement monorepo",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=@youtube-engagement/api",
+    "dev:all": "concurrently -n \"api,web\" -c \"blue,green\" \"npm run dev --workspace=@youtube-engagement/api\" \"npm run dev --workspace=@youtube-engagement/web\"",
+    "dev:api": "npm run dev --workspace=@youtube-engagement/api",
+    "dev:web": "npm run dev --workspace=@youtube-engagement/web",
+    "build": "npm run build --workspaces --if-present",
+    "type-check": "npm run type-check --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "prisma": "^5.14.0",
+    "typescript": "^5.3.3"
+  },
+  "overrides": {
+    "workbox-build": "7.1.1"
+  }
+}
