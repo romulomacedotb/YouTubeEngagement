@@ -89,15 +89,34 @@ export class SubscribersService {
         } while (pageToken && pagesCount < maxPages);
       }
 
+      let effectiveAccountId = accountId;
+      if (!effectiveAccountId) {
+        const defaultAccount =
+          (await this.prisma.oAuthAccount?.findFirst?.({
+            where: { clientConfig: { isDefault: true } },
+          })) || (await this.prisma.oAuthAccount?.findFirst?.());
+        effectiveAccountId = defaultAccount?.id || 'dev-account';
+      }
+
       // Persist results idempotently into SQLite
       for (const item of allItems) {
         try {
           const existing = await this.prisma.channel.findUnique({
-            where: { youtubeChannelId: item.youtubeChannelId },
+            where: {
+              accountId_youtubeChannelId: {
+                accountId: effectiveAccountId,
+                youtubeChannelId: item.youtubeChannelId,
+              },
+            },
           });
 
           await this.prisma.channel.upsert({
-            where: { youtubeChannelId: item.youtubeChannelId },
+            where: {
+              accountId_youtubeChannelId: {
+                accountId: effectiveAccountId,
+                youtubeChannelId: item.youtubeChannelId,
+              },
+            },
             update: {
               title: item.title,
               description: item.description || null,
@@ -108,6 +127,7 @@ export class SubscribersService {
               lastSyncedAt: new Date(),
             },
             create: {
+              accountId: effectiveAccountId,
               youtubeChannelId: item.youtubeChannelId,
               title: item.title,
               description: item.description || null,
@@ -185,12 +205,20 @@ export class SubscribersService {
   /**
    * Queries stored channels with search, filters, sorting and pagination
    */
-  async listSubscribers(params: ChannelFilterParams): Promise<PaginatedResponse<ChannelSummary>> {
+  async listSubscribers(
+    params: ChannelFilterParams,
+    sessionCookie?: string,
+  ): Promise<PaginatedResponse<ChannelSummary>> {
     const page = Math.max(1, Number(params.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(params.pageSize) || 20));
     const skip = (page - 1) * pageSize;
 
     const where: any = {};
+
+    let account = sessionCookie ? await this.auth.getAccountFromSession(sessionCookie) : null;
+    if (account) {
+      where.accountId = account.id;
+    }
 
     if (params.search) {
       const search = params.search.trim();

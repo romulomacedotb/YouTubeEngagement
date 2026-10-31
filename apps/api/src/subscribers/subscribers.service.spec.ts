@@ -94,7 +94,12 @@ describe('SubscribersService', () => {
     expect(prismaService.channel.upsert).toHaveBeenCalledTimes(2);
     expect(prismaService.channel.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { youtubeChannelId: 'UC_001' },
+        where: {
+          accountId_youtubeChannelId: {
+            accountId: expect.any(String),
+            youtubeChannelId: 'UC_001',
+          },
+        },
       }),
     );
 

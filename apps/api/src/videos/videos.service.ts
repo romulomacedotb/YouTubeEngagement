@@ -87,9 +87,13 @@ export class VideosService {
 
     // Upsert into Video table
     const savedVideo = await this.prisma.video.upsert({
-      where: { youtubeVideoId: fetchedVideo.youtubeVideoId },
+      where: {
+        channelId_youtubeVideoId: {
+          channelId: channel.id,
+          youtubeVideoId: fetchedVideo.youtubeVideoId,
+        },
+      },
       update: {
-        channelId: channel.id,
         title: fetchedVideo.title,
         description: fetchedVideo.description || null,
         url: fetchedVideo.url,
@@ -101,8 +105,8 @@ export class VideosService {
         commentCount: fetchedVideo.commentCount ?? null,
       },
       create: {
-        youtubeVideoId: fetchedVideo.youtubeVideoId,
         channelId: channel.id,
+        youtubeVideoId: fetchedVideo.youtubeVideoId,
         title: fetchedVideo.title,
         description: fetchedVideo.description || null,
         url: fetchedVideo.url,
@@ -151,7 +155,9 @@ export class VideosService {
       data: { status: 'RUNNING', startedAt: new Date() },
     });
 
-    const channels = await this.prisma.channel.findMany();
+    const account = sessionCookie ? await this.auth.getAccountFromSession(sessionCookie) : null;
+    const where: any = account ? { accountId: account.id } : {};
+    const channels = await this.prisma.channel.findMany({ where });
     let processedCount = 0;
     let errorCount = 0;
 

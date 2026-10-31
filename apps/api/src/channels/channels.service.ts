@@ -59,6 +59,8 @@ export class ChannelsService {
           await this.prisma.channel.update({
             where: { id: channel.id },
             data: {
+              title: details.title || channel.title,
+              description: details.description || channel.description,
               customUrl: details.customUrl || channel.customUrl,
               thumbnailUrl: details.thumbnailUrl || channel.thumbnailUrl,
               subscriberCount: details.subscriberCount ?? channel.subscriberCount,

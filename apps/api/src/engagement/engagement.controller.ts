@@ -34,8 +34,13 @@ export class EngagementController {
     @Query('type') type?: string,
     @Query('page') page?: number,
     @Query('pageSize') pageSize?: number,
+    @Req() req?: Request,
   ) {
-    return this.engagementService.getHistory({ channelId, status, type, page, pageSize });
+    const sessionCookie = req?.cookies?.[SESSION_COOKIE_NAME];
+    return this.engagementService.getHistory(
+      { channelId, status, type, page, pageSize },
+      sessionCookie,
+    );
   }
 
   @Get('actions/:id')

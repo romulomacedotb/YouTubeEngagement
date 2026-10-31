@@ -165,7 +165,7 @@ export class EngagementService {
     type?: string;
     page?: number;
     pageSize?: number;
-  }): Promise<PaginatedResponse<EngagementActionDto>> {
+  }, sessionCookie?: string): Promise<PaginatedResponse<EngagementActionDto>> {
     const page = Math.max(1, Number(params.page) || 1);
     const pageSize = Math.max(1, Math.min(100, Number(params.pageSize) || 20));
     const skip = (page - 1) * pageSize;
@@ -174,6 +174,13 @@ export class EngagementService {
     if (params.channelId) where.channelId = params.channelId;
     if (params.status) where.status = params.status;
     if (params.type) where.type = params.type;
+
+    if (sessionCookie) {
+      const account = await this.auth.getAccountFromSession(sessionCookie);
+      if (account) {
+        where.channel = { accountId: account.id };
+      }
+    }
 
     const [total, records] = await Promise.all([
       this.prisma.engagementAction.count({ where }),
@@ -370,7 +377,12 @@ export class EngagementService {
             : await this.youtube.fetchLatestVideoForChannel(accessToken, channel.youtubeChannelId);
           if (fetched) {
             video = await this.prisma.video.upsert({
-              where: { youtubeVideoId: fetched.youtubeVideoId },
+              where: {
+                channelId_youtubeVideoId: {
+                  channelId: channel.id,
+                  youtubeVideoId: fetched.youtubeVideoId,
+                },
+              },
               update: {
                 title: fetched.title,
                 url: fetched.url,

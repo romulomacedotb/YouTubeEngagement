@@ -104,7 +104,12 @@ describe('VideosService', () => {
     expect(youtubeService.getMockLatestVideo).toHaveBeenCalledWith('UC_001');
     expect(prismaService.video.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { youtubeVideoId: 'yt_mock_123' },
+        where: {
+          channelId_youtubeVideoId: {
+            channelId: 'ch-1',
+            youtubeVideoId: 'yt_mock_123',
+          },
+        },
       }),
     );
     expect(result).toHaveProperty('title', 'Vídeo Teste Recente');

@@ -145,7 +145,7 @@ export class YouTubeService {
 
     try {
       const response = await youtube.subscriptions.list({
-        part: ['snippet'],
+        part: ['snippet', 'subscriberSnippet'],
         mySubscribers: true,
         maxResults,
         pageToken,
@@ -161,28 +161,33 @@ export class YouTubeService {
       const channelIds: string[] = [];
 
       for (const item of rawItems) {
-        const snippet: any = item.snippet || {};
-        const subSnippet = snippet.subscriberSnippet || snippet;
-        const channelId = subSnippet.channelId || snippet.channelId || snippet.resourceId?.channelId;
+        const subSnippet: any = (item as any).subscriberSnippet || item.snippet || {};
+        const channelId = subSnippet.channelId || item.snippet?.channelId || item.snippet?.resourceId?.channelId;
 
         if (channelId) {
           channelIds.push(channelId);
           basicItems.push({
             youtubeChannelId: channelId,
-            title: subSnippet.title || snippet.title || 'Canal do YouTube',
-            description: subSnippet.description || snippet.description || '',
-            thumbnailUrl: subSnippet.thumbnails?.default?.url || snippet.thumbnails?.default?.url || null,
+            title: (item as any).subscriberSnippet?.title || 'Canal do YouTube',
+            description: subSnippet.description || '',
+            thumbnailUrl: subSnippet.thumbnails?.default?.url || item.snippet?.thumbnails?.default?.url || null,
           });
         }
       }
 
-      // If we have channel IDs, query youtube.channels.list in batch to get statistics & handle
+      // If we have channel IDs, query youtube.channels.list in batch to get statistics, official title & handle
       if (channelIds.length > 0) {
         try {
           const detailsMap = await this.fetchChannelsDetailsBatch(accessToken, channelIds);
           for (const basic of basicItems) {
             const detail = detailsMap.get(basic.youtubeChannelId);
             if (detail) {
+              if (detail.title) {
+                basic.title = detail.title;
+              }
+              if (detail.description) {
+                basic.description = detail.description;
+              }
               basic.customUrl = detail.customUrl;
               basic.subscriberCount = detail.subscriberCount;
               basic.videoCount = detail.videoCount;
@@ -236,6 +241,8 @@ export class YouTubeService {
       for (const ch of items) {
         if (ch.id) {
           map.set(ch.id, {
+            title: ch.snippet?.title || undefined,
+            description: ch.snippet?.description || undefined,
             customUrl: ch.snippet?.customUrl || undefined,
             thumbnailUrl: ch.snippet?.thumbnails?.default?.url || undefined,
             subscriberCount: ch.statistics?.subscriberCount

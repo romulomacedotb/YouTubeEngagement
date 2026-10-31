@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "description": "YouTube Subscriber Engagement monorepo",
+  "author": "YouTube Engagement Studio",
+  "main": "apps/desktop/dist/main.js",
   "workspaces": [
     "packages/*",
     "apps/*"
@@ -13,6 +15,9 @@
     "dev:api": "npm run dev --workspace=@youtube-engagement/api",
     "dev:web": "npm run dev --workspace=@youtube-engagement/web",
     "build": "npm run build --workspaces --if-present",
+    "desktop:build": "npm run build && npm run build --workspace=@youtube-engagement/desktop",
+    "desktop:dist": "npm run desktop:build && electron-builder --win portable",
+    "desktop:dir": "npm run desktop:build && electron-builder --win --dir",
     "type-check": "npm run type-check --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "prisma:generate": "prisma generate",

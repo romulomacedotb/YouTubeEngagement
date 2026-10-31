@@ -12,8 +12,10 @@ export class SubscribersController {
   @Get('subscribers')
   async listSubscribers(
     @Query() query: ChannelFilterParams,
+    @Req() req: Request,
   ): Promise<PaginatedResponse<ChannelSummary>> {
-    return this.subscribersService.listSubscribers(query);
+    const sessionCookie = req.cookies?.[SESSION_COOKIE_NAME];
+    return this.subscribersService.listSubscribers(query, sessionCookie);
   }
 
   @Post('sync/subscribers')

@@ -25,6 +25,8 @@ model OAuthAccount {
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
 
+  channels             Channel[]
+
   @@index([clientConfigId])
 }
 
@@ -45,7 +47,9 @@ model GoogleClientConfig {
 
 model Channel {
   id               String             @id @default(uuid())
-  youtubeChannelId String             @unique
+  accountId        String?
+  account          OAuthAccount?      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  youtubeChannelId String
   title            String
   thumbnailUrl     String?
   description      String?
@@ -59,13 +63,15 @@ model Channel {
   videos           Video[]
   actions          EngagementAction[]
 
+  @@unique([accountId, youtubeChannelId])
+  @@index([accountId])
   @@index([title])
   @@index([lastSyncedAt])
 }
 
 model Video {
   id             String             @id @default(uuid())
-  youtubeVideoId String             @unique
+  youtubeVideoId String
   channelId      String
   channel        Channel            @relation(fields: [channelId], references: [id], onDelete: Cascade)
   title          String
@@ -82,6 +88,7 @@ model Video {
 
   actions        EngagementAction[]
 
+  @@unique([channelId, youtubeVideoId])
   @@index([channelId])
   @@index([publishedAt])
 }

@@ -1,0 +1,42 @@
+appId: com.youtubeengagement.studio
+productName: "YouTube Engagement Studio"
+electronVersion: "30.5.1"
+npmRebuild: false
+nodeGypRebuild: false
+directories:
+  output: dist-electron
+  buildResources: build
+files:
+  - "dist/**/*"
+  - from: "../web/dist"
+    to: "web-dist"
+  - from: "../api/dist"
+    to: "api-dist"
+  - from: "../../prisma"
+    to: "prisma"
+  - from: "../../node_modules"
+    to: "node_modules"
+    filter:
+      - "!**/*.map"
+      - "!**/@types"
+      - "!**/*.ts"
+      - "!**/*.md"
+asar: true
+asarUnpack:
+  - "**/node_modules/.prisma/**"
+  - "**/node_modules/@prisma/**"
+  - "**/*.node"
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: "YouTube Engagement Studio"
+  createDesktopShortcut: always
+  runAfterFinish: true

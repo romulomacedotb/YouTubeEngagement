@@ -1,0 +1,19 @@
+{
+  "name": "@youtube-engagement/desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "YouTube Subscriber Engagement Desktop Studio",
+  "author": "YouTube Engagement Studio",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc && electron .",
+    "dist": "npm run build && electron-builder --win",
+    "dist:dir": "npm run build && electron-builder --win --dir"
+  },
+  "devDependencies": {
+    "electron": "30.5.1",
+    "electron-builder": "^24.13.3",
+    "typescript": "^5.3.3"
+  }
+}
