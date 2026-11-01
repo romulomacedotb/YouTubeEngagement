@@ -20,7 +20,12 @@
     "forceConsistentCasingInFileNames": false,
     "noFallthroughCasesInSwitch": false,
     "paths": {
-      "@youtube-engagement/shared": ["../../packages/shared/dist/index"]
+      "@youtube-engagement/shared": [
+        "../../packages/shared/dist/index.d.ts",
+        "../../packages/shared/dist/index",
+        "../../packages/shared/dist",
+        "../../node_modules/@youtube-engagement/shared"
+      ]
     }
   }
 }
