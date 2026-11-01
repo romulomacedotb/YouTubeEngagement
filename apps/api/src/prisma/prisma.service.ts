@@ -8,7 +8,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   async onModuleInit() {
     try {
       await this.$connect();
-      this.logger.log('Conectado ao banco de dados SQLite com sucesso.');
+      await this.$queryRawUnsafe('PRAGMA journal_mode = WAL;');
+      await this.$queryRawUnsafe('PRAGMA busy_timeout = 5000;');
+      this.logger.log('Conectado ao banco de dados SQLite (modo WAL ativo) com sucesso.');
     } catch (error) {
       this.logger.error('Erro ao conectar ao banco de dados SQLite:', error);
     }

@@ -209,9 +209,11 @@ export class SubscribersService {
     params: ChannelFilterParams,
     sessionCookie?: string,
   ): Promise<PaginatedResponse<ChannelSummary>> {
-    const page = Math.max(1, Number(params.page) || 1);
-    const pageSize = Math.min(100, Math.max(1, Number(params.pageSize) || 20));
-    const skip = (page - 1) * pageSize;
+    const rawPageSize = params.pageSize !== undefined ? Number(params.pageSize) : 12;
+    const isAll = rawPageSize === -1 || rawPageSize === 0;
+    const page = isAll ? 1 : Math.max(1, Number(params.page) || 1);
+    const pageSize = isAll ? undefined : Math.min(1000, Math.max(1, rawPageSize));
+    const skip = isAll ? undefined : (page - 1) * (pageSize as number);
 
     const where: any = {};
 
@@ -233,45 +235,45 @@ export class SubscribersService {
       where.videos = { some: {} };
     }
 
-    if (params.engagementStatus === 'pending') {
-      where.actions = {
-        none: {
-          status: { in: ['CONFIRMED', 'COPIED', 'EXECUTED'] },
-        },
-      };
-    } else if (params.engagementStatus === 'commented') {
-      where.actions = {
-        some: {
-          type: { in: ['COMMENT', 'COMMENT_AND_LIKE'] },
-          status: { in: ['CONFIRMED', 'COPIED', 'EXECUTED'] },
-        },
-      };
-    } else if (params.engagementStatus === 'liked') {
-      where.actions = {
-        some: {
-          type: { in: ['LIKE', 'COMMENT_AND_LIKE'] },
-          status: { in: ['CONFIRMED', 'COPIED', 'EXECUTED'] },
-        },
-      };
-    } else if (params.engagementStatus === 'both') {
-      where.AND = [
-        {
-          actions: {
-            some: {
-              type: { in: ['COMMENT', 'COMMENT_AND_LIKE'] },
-              status: { in: ['CONFIRMED', 'COPIED', 'EXECUTED'] },
-            },
-          },
-        },
-        {
-          actions: {
-            some: {
-              type: { in: ['LIKE', 'COMMENT_AND_LIKE'] },
-              status: { in: ['CONFIRMED', 'COPIED', 'EXECUTED'] },
-            },
-          },
-        },
-      ];
+    const SUCCESS = ['CONFIRMED', 'COPIED', 'EXECUTED'];
+    const commentedCond = { some: { type: { in: ['COMMENT', 'COMMENT_AND_LIKE'] }, status: { in: SUCCESS } } };
+    const likedCond = { some: { type: { in: ['LIKE', 'COMMENT_AND_LIKE'] }, status: { in: SUCCESS } } };
+    const notCommentedCond = { none: { type: { in: ['COMMENT', 'COMMENT_AND_LIKE'] }, status: { in: SUCCESS } } };
+    const notLikedCond = { none: { type: { in: ['LIKE', 'COMMENT_AND_LIKE'] }, status: { in: SUCCESS } } };
+    const andFilters: any[] = [];
+
+    switch (params.engagementStatus) {
+      case 'pending': // neither commented nor liked
+        andFilters.push({ actions: notCommentedCond }, { actions: notLikedCond });
+        break;
+      case 'incomplete': // missing comment OR missing like
+        andFilters.push({ OR: [{ actions: notCommentedCond }, { actions: notLikedCond }] });
+        break;
+      case 'not_commented':
+        andFilters.push({ actions: notCommentedCond });
+        break;
+      case 'not_liked':
+        andFilters.push({ actions: notLikedCond });
+        break;
+      case 'commented':
+        andFilters.push({ actions: commentedCond });
+        break;
+      case 'liked':
+        andFilters.push({ actions: likedCond });
+        break;
+      case 'both':
+        andFilters.push({ actions: commentedCond }, { actions: likedCond });
+        break;
+      case 'failed': // had a failure and still not fully completed
+        andFilters.push(
+          { actions: { some: { status: 'FAILED' } } },
+          { OR: [{ actions: notCommentedCond }, { actions: notLikedCond }] },
+        );
+        break;
+    }
+
+    if (andFilters.length > 0) {
+      where.AND = andFilters;
     }
 
     let orderBy: any = { lastSyncedAt: 'desc' };
@@ -293,8 +295,8 @@ export class SubscribersService {
     const [items, total] = await Promise.all([
       this.prisma.channel.findMany({
         where,
-        skip,
-        take: pageSize,
+        ...(skip !== undefined ? { skip } : {}),
+        ...(pageSize !== undefined ? { take: pageSize } : {}),
         orderBy,
         include: {
           videos: {
@@ -303,7 +305,7 @@ export class SubscribersService {
           },
           actions: {
             orderBy: { createdAt: 'desc' },
-            take: 10,
+            take: 30,
           },
         },
       }),
@@ -323,6 +325,14 @@ export class SubscribersService {
       );
       const lastAction = successfulActions[0];
 
+      // Show the latest failure only if it happened after the last success
+      // and the channel is still not fully engaged (comment + like)
+      const lastFailed = actions.find((a) => a.status === 'FAILED');
+      const failureIsRelevant =
+        !!lastFailed &&
+        !(hasCommented && hasLiked) &&
+        (!lastAction || lastFailed.createdAt > lastAction.createdAt);
+
       return {
         id: c.id,
         youtubeChannelId: c.youtubeChannelId,
@@ -339,6 +349,8 @@ export class SubscribersService {
         hasLiked,
         lastEngagementDate: lastAction ? lastAction.createdAt.toISOString() : null,
         lastEngagementStatus: lastAction ? lastAction.status : null,
+        lastEngagementError: failureIsRelevant ? lastFailed!.error || 'Falha na execução.' : null,
+        lastEngagementErrorAt: failureIsRelevant ? lastFailed!.createdAt.toISOString() : null,
         latestVideo: c.videos[0]
           ? {
               id: c.videos[0].id,
@@ -357,12 +369,15 @@ export class SubscribersService {
       };
     });
 
+    const effectivePageSize = isAll ? total : (pageSize as number);
+    const totalPages = isAll ? 1 : Math.max(1, Math.ceil(total / (pageSize as number)));
+
     return {
       items: formattedItems,
       total,
       page,
-      pageSize,
-      totalPages: Math.ceil(total / pageSize) || 1,
+      pageSize: effectivePageSize,
+      totalPages,
     };
   }
 }

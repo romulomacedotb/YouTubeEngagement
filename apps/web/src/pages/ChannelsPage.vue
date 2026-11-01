@@ -73,10 +73,14 @@
           class="bg-slate-900/80 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500 font-medium"
         >
           <option value="all">🔍 Todos os Status</option>
-          <option value="pending">⏳ Pendentes (Não interagidos)</option>
+          <option value="incomplete">🎯 Falta comentar ou curtir</option>
+          <option value="pending">⏳ Nem comentados nem curtidos</option>
+          <option value="not_commented">💬 Ainda não comentados</option>
+          <option value="not_liked">🤍 Ainda não curtidos</option>
+          <option value="failed">❌ Com erro (ex.: quota)</option>
           <option value="commented">💬 Já Comentados</option>
           <option value="liked">❤️ Já Curtidos</option>
-          <option value="both">✨ Comentados & Curtidos</option>
+          <option value="both">✨ Comentados &amp; Curtidos</option>
         </select>
 
         <!-- Sorter -->
@@ -90,6 +94,20 @@
           <option value="videoCount">Mais vídeos publicados</option>
           <option value="title">Nome (A-Z)</option>
           <option value="createdAt">Data de inclusão</option>
+        </select>
+
+        <!-- Page Size Selector -->
+        <select
+          v-model="pageSize"
+          @change="onPageSizeChange"
+          class="bg-slate-900/80 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-brand-500 font-medium"
+          title="Quantidade de canais por página"
+        >
+          <option :value="12">12 por página</option>
+          <option :value="24">24 por página</option>
+          <option :value="48">48 por página</option>
+          <option :value="100">100 por página</option>
+          <option :value="-1">Todos (sem paginação)</option>
         </select>
 
         <!-- Filter: Only with video -->
@@ -110,7 +128,7 @@
       v-if="channels.length > 0"
       class="p-3 rounded-2xl bg-slate-900/60 border border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs"
     >
-      <div class="flex items-center gap-3">
+      <div class="flex flex-wrap items-center gap-3">
         <label class="inline-flex items-center gap-2 cursor-pointer text-slate-300 font-semibold select-none">
           <input
             type="checkbox"
@@ -118,8 +136,17 @@
             @change="toggleSelectAll"
             class="w-4 h-4 rounded border-slate-700 text-brand-600 focus:ring-brand-500 bg-slate-900 cursor-pointer"
           />
-          <span>Selecionar todos da página ({{ channels.length }})</span>
+          <span>{{ pageSize === -1 ? `Selecionar todos os canais (${channels.length})` : `Selecionar todos da página (${channels.length})` }}</span>
         </label>
+
+        <!-- Shortcut to load and select all channels across all pages -->
+        <button
+          v-if="pageSize !== -1 && totalChannels > channels.length"
+          @click="selectAllAcrossAllPages"
+          class="text-[11px] text-brand-400 hover:text-brand-300 underline font-medium"
+        >
+          Carregar e selecionar todos os {{ totalChannels }} canais
+        </button>
 
         <span
           v-if="selectedChannelIds.length > 0"
@@ -285,6 +312,16 @@
                 <span>Pendente</span>
               </span>
 
+              <!-- Last failure (e.g. quota exceeded) — never counted as commented/liked -->
+              <span
+                v-if="ch.lastEngagementError"
+                class="inline-flex items-center gap-1 max-w-full px-2.5 py-0.5 rounded-lg bg-rose-950/60 text-rose-300 border border-rose-700/60 text-[11px] font-semibold"
+                :title="`${ch.lastEngagementError}${ch.lastEngagementErrorAt ? ' — ' + formatDate(ch.lastEngagementErrorAt) : ''}`"
+              >
+                <span>❌</span>
+                <span class="truncate">Erro: {{ shortError(ch.lastEngagementError) }}</span>
+              </span>
+
               <!-- Stats pills -->
               <span v-if="ch.subscriberCount !== null && ch.subscriberCount !== undefined" class="px-2 py-0.5 rounded-lg bg-slate-850 text-slate-400 border border-slate-800 text-[10px]">
                 {{ formatNumber(ch.subscriberCount) }} subs
@@ -403,11 +440,33 @@
 
       <!-- Pagination Footer -->
       <div class="glass-card p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
-        <div>
-          Exibindo <strong>{{ channels.length }}</strong> de <strong>{{ totalChannels }}</strong> canais
+        <div class="flex flex-wrap items-center gap-3">
+          <div>
+            <span v-if="pageSize === -1">
+              Exibindo <strong>todos os {{ totalChannels }}</strong> canais
+            </span>
+            <span v-else>
+              Exibindo <strong>{{ channels.length }}</strong> de <strong>{{ totalChannels }}</strong> canais
+            </span>
+          </div>
+
+          <div class="flex items-center gap-1.5 pl-3 border-l border-slate-800">
+            <span>Exibir:</span>
+            <select
+              v-model="pageSize"
+              @change="onPageSizeChange"
+              class="bg-slate-900 border border-slate-700/80 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-brand-500"
+            >
+              <option :value="12">12</option>
+              <option :value="24">24</option>
+              <option :value="48">48</option>
+              <option :value="100">100</option>
+              <option :value="-1">Todos</option>
+            </select>
+          </div>
         </div>
 
-        <div class="flex items-center gap-2">
+        <div v-if="pageSize !== -1 && totalPages > 1" class="flex items-center gap-2">
           <button
             @click="changePage(currentPage - 1)"
             :disabled="currentPage <= 1 || isLoading"
@@ -534,6 +593,22 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
               </svg>
               <span>Engajamento em Lote Concluído!</span>
+            </div>
+
+            <!-- Quota Exceeded Alert Banner -->
+            <div
+              v-if="batchResult.quotaExceeded || batchResult.quotaMessage"
+              class="p-3 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-200 text-xs flex items-start gap-2.5"
+            >
+              <svg class="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div>
+                <p class="font-bold text-amber-300">Limite de Quota da YouTube Data API Atingido</p>
+                <p class="text-[11px] text-amber-200/90 mt-0.5">
+                  {{ batchResult.quotaMessage || 'A quota diária da API do YouTube foi esgotada. Os canais restantes não foram alterados para evitar chamadas adicionais e serão renovados à meia-noite (horário do Pacífico).' }}
+                </p>
+              </div>
             </div>
 
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-center">
@@ -957,7 +1032,18 @@ const syncingVideoChannelId = ref<string | null>(null);
 const searchQuery = ref('');
 const sortBy = ref('lastSyncedAt');
 const hasVideoOnly = ref(false);
-const engagementFilter = ref<'all' | 'pending' | 'commented' | 'liked' | 'both'>('all');
+const engagementFilter = ref<
+  | 'all'
+  | 'pending'
+  | 'incomplete'
+  | 'not_commented'
+  | 'not_liked'
+  | 'commented'
+  | 'liked'
+  | 'both'
+  | 'failed'
+>('all');
+const pageSize = ref<number>(12);
 const currentPage = ref(1);
 const totalPages = ref(1);
 const totalChannels = ref(0);
@@ -1014,6 +1100,19 @@ function onFilterChange() {
   loadChannels();
 }
 
+function onPageSizeChange() {
+  currentPage.value = 1;
+  loadChannels();
+}
+
+async function selectAllAcrossAllPages() {
+  if (pageSize.value !== -1) {
+    pageSize.value = -1;
+    await loadChannels();
+  }
+  selectedChannelIds.value = channels.value.map((c) => c.id);
+}
+
 function resetFilters() {
   engagementFilter.value = 'all';
   hasVideoOnly.value = false;
@@ -1032,7 +1131,7 @@ async function loadChannels() {
       engagementStatus: engagementFilter.value === 'all' ? undefined : engagementFilter.value,
       sortBy: sortBy.value as any,
       page: currentPage.value,
-      pageSize: 12,
+      pageSize: pageSize.value,
     });
     channels.value = res.items || [];
     totalChannels.value = res.total;
@@ -1142,15 +1241,21 @@ async function singleLikeVideo(ch: ChannelSummary) {
       actionTypes: ['LIKE'],
       skipAlreadyInteracted: false,
     });
-    if (res.successCount > 0) {
+    const r = res.results?.[0];
+    if (res.successCount > 0 && r?.liked) {
       appStore.showToast(`Vídeo de "${ch.title}" curtido com sucesso!`, 'success');
       ch.hasLiked = true;
       ch.lastEngagementDate = new Date().toISOString();
+      ch.lastEngagementError = null;
     } else {
-      appStore.showToast('Não foi possível curtir o vídeo.', 'error');
+      const errMsg = r?.error || res.quotaMessage || 'Não foi possível curtir o vídeo.';
+      ch.lastEngagementError = errMsg;
+      appStore.showToast(errMsg, 'error');
     }
   } catch (err: any) {
-    appStore.showToast(err.message || 'Erro ao curtir vídeo', 'error');
+    const msg = err.message || 'Erro ao curtir vídeo';
+    ch.lastEngagementError = msg;
+    appStore.showToast(msg, 'error');
   } finally {
     isRecordingAction.value = false;
   }
@@ -1166,18 +1271,33 @@ async function singleCommentAndLike(ch: ChannelSummary) {
       commentText: customCommentText.value,
       skipAlreadyInteracted: false,
     });
-    if (res.successCount > 0) {
+    const r = res.results?.[0];
+    if (res.successCount > 0 && r?.commentSent && r?.liked) {
       appStore.showToast(`Comentado e curtido com sucesso no canal "${ch.title}"!`, 'success');
       ch.hasCommented = true;
       ch.hasLiked = true;
       ch.lastEngagementDate = new Date().toISOString();
+      ch.lastEngagementError = null;
+      selectedChannel.value = null;
+      await loadChannels();
+    } else if (r?.commentSent || r?.liked) {
+      if (r?.commentSent) ch.hasCommented = true;
+      if (r?.liked) ch.hasLiked = true;
+      ch.lastEngagementDate = new Date().toISOString();
+      const warnMsg = r?.error || 'Ação parcialmente concluída com avisos.';
+      ch.lastEngagementError = warnMsg;
+      appStore.showToast(warnMsg, 'info');
       selectedChannel.value = null;
       await loadChannels();
     } else {
-      appStore.showToast('Não foi possível concluir o engajamento.', 'error');
+      const errMsg = r?.error || res.quotaMessage || 'Não foi possível concluir o engajamento.';
+      ch.lastEngagementError = errMsg;
+      appStore.showToast(errMsg, 'error');
     }
   } catch (err: any) {
-    appStore.showToast(err.message || 'Erro ao engajar', 'error');
+    const msg = err.message || 'Erro ao engajar';
+    ch.lastEngagementError = msg;
+    appStore.showToast(msg, 'error');
   } finally {
     isRecordingAction.value = false;
   }
@@ -1366,6 +1486,26 @@ function formatRelativeDate(dateStr?: string | null): string {
   if (diffHours < 24) return `há ${diffHours}h`;
   const diffDays = Math.round(diffHours / 24);
   return `há ${diffDays}d`;
+}
+
+function shortError(err?: string | null): string {
+  if (!err) return '';
+  if (err.includes('Quota diária') || err.toLowerCase().includes('quota')) {
+    return 'Quota da API esgotada';
+  }
+  if (err.includes('Comentários desativados')) {
+    return 'Comentários desativados';
+  }
+  if (err.includes('Reconecte o canal') || err.includes('Sessão do Google expirada')) {
+    return 'Reconectar canal';
+  }
+  if (err.includes('Permissão insuficiente')) {
+    return 'Permissão insuficiente';
+  }
+  if (err.length > 40) {
+    return err.slice(0, 37) + '...';
+  }
+  return err;
 }
 
 onMounted(() => {

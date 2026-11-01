@@ -72,6 +72,9 @@ export interface ChannelSummary {
   hasLiked?: boolean;
   lastEngagementDate?: string | null;
   lastEngagementStatus?: string | null;
+  /** Most recent failure that happened after the last successful interaction (e.g. quota) */
+  lastEngagementError?: string | null;
+  lastEngagementErrorAt?: string | null;
 }
 
 export interface VideoSummary {
@@ -170,6 +173,8 @@ export interface BatchEngagementResult {
   successCount: number;
   skippedCount: number;
   errorCount: number;
+  quotaExceeded?: boolean;
+  quotaMessage?: string;
   results: BatchEngagementChannelResult[];
 }
 
@@ -208,7 +213,16 @@ export interface SyncJobDto {
 export interface ChannelFilterParams {
   search?: string;
   hasLatestVideo?: boolean;
-  engagementStatus?: 'all' | 'pending' | 'commented' | 'liked' | 'both';
+  engagementStatus?:
+    | 'all'
+    | 'pending'
+    | 'incomplete'
+    | 'not_commented'
+    | 'not_liked'
+    | 'commented'
+    | 'liked'
+    | 'both'
+    | 'failed';
   page?: number;
   pageSize?: number;
   sortBy?: 'title' | 'lastSyncedAt' | 'createdAt' | 'subscriberCount' | 'videoCount';

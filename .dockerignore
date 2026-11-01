@@ -1,0 +1,37 @@
+# Dependencies & build outputs
+node_modules
+**/node_modules
+dist
+**/dist
+dist-electron
+coverage
+dev-dist
+
+# Desktop app source (excluded from cloud image; package.json kept for npm workspaces lockfile)
+apps/desktop/src
+apps/desktop/electron-builder.yml
+electron-builder.yml
+
+# Local databases & WAL files (never bake local secrets/DB into image)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+prisma/*.db
+prisma/*.db-*
+
+# Secrets & local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Git & IDE
+.git
+.gitignore
+.vscode
+.idea
+README.md
+plano-execucao-youtube-engagement.md
+

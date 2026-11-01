@@ -137,4 +137,37 @@ describe('SubscribersService', () => {
     expect(result.pageSize).toBe(10);
     expect(result.items[0].title).toBe('Canal Alpha');
   });
+
+  it('should return all subscribers without limit when pageSize is -1', async () => {
+    const mockChannels = [
+      {
+        id: '1',
+        youtubeChannelId: 'UC_001',
+        title: 'Canal Alpha',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        videos: [],
+      },
+      {
+        id: '2',
+        youtubeChannelId: 'UC_002',
+        title: 'Canal Beta',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        videos: [],
+      },
+    ];
+
+    prismaService.channel.findMany.mockResolvedValue(mockChannels);
+    prismaService.channel.count.mockResolvedValue(2);
+
+    const result = await service.listSubscribers({ page: 1, pageSize: -1 });
+    expect(result.items).toHaveLength(2);
+    expect(result.total).toBe(2);
+    expect(result.page).toBe(1);
+    expect(result.totalPages).toBe(1);
+    expect(prismaService.channel.findMany).toHaveBeenCalledWith(
+      expect.not.objectContaining({ take: expect.anything() }),
+    );
+  });
 });

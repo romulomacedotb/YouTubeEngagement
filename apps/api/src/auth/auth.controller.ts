@@ -21,6 +21,19 @@ import {
 const SESSION_COOKIE_NAME = 'yt_session';
 const STATE_COOKIE_NAME = 'oauth_state';
 
+function resolveWebOrigin(): string {
+  const isProduction = process.env.NODE_ENV === 'production';
+  if (isProduction) {
+    return (
+      process.env.WEB_ORIGIN ||
+      process.env.PUBLIC_URL ||
+      process.env.RENDER_EXTERNAL_URL ||
+      ''
+    ).replace(/\/$/, '');
+  }
+  return (process.env.WEB_ORIGIN || 'http://localhost:5173').replace(/\/$/, '');
+}
+
 @Controller()
 export class AuthController {
   private readonly logger = new Logger(AuthController.name);
@@ -66,7 +79,7 @@ export class AuthController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    const webOrigin = process.env.WEB_ORIGIN || 'http://localhost:5173';
+    const webOrigin = resolveWebOrigin();
     const isProduction = process.env.NODE_ENV === 'production';
     const cookieState = req.cookies?.[STATE_COOKIE_NAME];
 
@@ -158,7 +171,7 @@ export class AuthController {
     }
 
     const { sessionToken } = await this.authService.createDevSession();
-    const webOrigin = process.env.WEB_ORIGIN || 'http://localhost:5173';
+    const webOrigin = resolveWebOrigin();
 
     res.cookie(SESSION_COOKIE_NAME, sessionToken, {
       httpOnly: true,

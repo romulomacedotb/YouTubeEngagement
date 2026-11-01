@@ -1,0 +1,15 @@
+dbs:
+  - path: /data/dev.db
+    replicas:
+      - type: s3
+        bucket: ${LITESTREAM_REPLICA_BUCKET}
+        path: ${LITESTREAM_REPLICA_PATH}
+        endpoint: ${LITESTREAM_REPLICA_ENDPOINT}
+        region: ${LITESTREAM_REPLICA_REGION}
+        force-path-style: true
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+        sync-interval: 1s
+        snapshot-interval: 1h
+        retention: 24h
+

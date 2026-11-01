@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
 import * as express from 'express';
 import * as fs from 'fs';
@@ -11,7 +12,10 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // Trust reverse proxy headers (Render, Koyeb, Caddy, Nginx) for HTTPS cookies
+  app.set('trust proxy', 1);
 
   // Global prefix
   app.setGlobalPrefix('api');
@@ -20,12 +24,24 @@ async function bootstrap() {
   app.use(cookieParser());
 
   // CORS
-  const webOrigin = process.env.WEB_ORIGIN || 'http://localhost:5173';
+  const allowedOrigins = Array.from(
+    new Set(
+      [
+        process.env.WEB_ORIGIN,
+        process.env.PUBLIC_URL,
+        process.env.RENDER_EXTERNAL_URL,
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'http://localhost:3000',
+      ].filter((origin): origin is string => !!origin && origin.trim().length > 0),
+    ),
+  );
+
   app.enableCors({
-    origin: [webOrigin, 'http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000'],
+    origin: allowedOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Backup-Secret'],
   });
 
   // Global validation pipe
@@ -62,9 +78,13 @@ async function bootstrap() {
   }
 
   const port = process.env.PORT || 3000;
-  await app.listen(port);
-  logger.log(`Servidor NestJS iniciado em http://localhost:${port}/api`);
-  logger.log(`Health check disponível em http://localhost:${port}/api/health`);
+  if (process.env.HOST) {
+    await app.listen(port, process.env.HOST);
+  } else {
+    await app.listen(port);
+  }
+  logger.log(`Servidor NestJS iniciado na porta ${port} (/api)`);
+  logger.log(`Health check disponível em /api/health`);
 }
 
 bootstrap();

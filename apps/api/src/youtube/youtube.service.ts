@@ -403,12 +403,54 @@ export class YouTubeService {
   /**
    * Posts a top-level comment on a YouTube video via official YouTube Data API
    */
+  /**
+   * Translates YouTube Data API errors into short, user-friendly messages
+   * and flags quota exhaustion so batch processing can stop early.
+   */
+  describeYouTubeError(err: any): { message: string; isQuota: boolean } {
+    const status = err?.code || err?.response?.status;
+    const reasons: string[] = (err?.errors || err?.response?.data?.error?.errors || [])
+      .map((e: any) => String(e?.reason || ''))
+      .filter(Boolean);
+    const raw = String(err?.message || err || '');
+    const has = (s: string) => reasons.includes(s) || raw.toLowerCase().includes(s.toLowerCase());
+
+    if (has('quotaExceeded') || has('dailyLimitExceeded') || has('exceeded your quota') || has('quota')) {
+      return { message: 'Quota diária da API do YouTube esgotada (renova à meia-noite, horário do Pacífico).', isQuota: true };
+    }
+    if (has('rateLimitExceeded') || has('userRateLimitExceeded') || status === 429) {
+      return { message: 'Muitas requisições em pouco tempo (limite de taxa). Tente novamente em alguns minutos.', isQuota: false };
+    }
+    if (has('commentsDisabled')) {
+      return { message: 'Comentários desativados pelo proprietário do vídeo.', isQuota: false };
+    }
+    if (has('videoNotFound') || status === 404) {
+      return { message: 'Vídeo não encontrado ou removido.', isQuota: false };
+    }
+    if (status === 401 || has('invalid_grant') || has('Invalid Credentials')) {
+      return { message: 'Sessão do Google expirada ou inválida. Reconecte o canal em Configurações.', isQuota: false };
+    }
+    if (has('insufficientPermissions') || has('ACCESS_TOKEN_SCOPE_INSUFFICIENT')) {
+      return { message: 'Permissão insuficiente no token do Google. Reconecte o canal autorizando todos os escopos.', isQuota: false };
+    }
+    if (has('forbidden') || status === 403) {
+      return { message: `Ação recusada pelo YouTube (403): ${raw}`, isQuota: false };
+    }
+    return { message: raw || 'Erro desconhecido na API do YouTube.', isQuota: false };
+  }
+
+  private static readonly NO_TOKEN_ERROR =
+    'Nenhum canal do Google autenticado (ou token expirado). Conecte/reconecte o canal em Configurações.';
+
   async postComment(
     accessToken: string | null | undefined,
     youtubeVideoId: string,
     commentText: string,
-  ): Promise<{ commentId: string; error?: string }> {
-    if (!accessToken || accessToken.startsWith('mock-')) {
+  ): Promise<{ commentId: string; error?: string; isQuota?: boolean }> {
+    if (!accessToken) {
+      return { commentId: '', error: YouTubeService.NO_TOKEN_ERROR };
+    }
+    if (accessToken.startsWith('mock-')) {
       this.logger.log(`[Simulação] Comentário postado com sucesso no vídeo ${youtubeVideoId}: "${commentText}"`);
       return { commentId: `mock_comment_${Date.now()}` };
     }
@@ -433,10 +475,8 @@ export class YouTubeService {
       return { commentId: res.data.id || '' };
     } catch (err: any) {
       this.logger.error(`Erro ao postar comentário no vídeo ${youtubeVideoId}: ${err.message}`);
-      if (err.message?.includes('commentsDisabled')) {
-        return { commentId: '', error: 'Comentários desativados pelo proprietário do vídeo.' };
-      }
-      throw err;
+      const { message, isQuota } = this.describeYouTubeError(err);
+      return { commentId: '', error: message, isQuota };
     }
   }
 
@@ -446,8 +486,11 @@ export class YouTubeService {
   async likeVideo(
     accessToken: string | null | undefined,
     youtubeVideoId: string,
-  ): Promise<{ success: boolean; error?: string }> {
-    if (!accessToken || accessToken.startsWith('mock-')) {
+  ): Promise<{ success: boolean; error?: string; isQuota?: boolean }> {
+    if (!accessToken) {
+      return { success: false, error: YouTubeService.NO_TOKEN_ERROR };
+    }
+    if (accessToken.startsWith('mock-')) {
       this.logger.log(`[Simulação] Curtida (like) registrada com sucesso no vídeo ${youtubeVideoId}`);
       return { success: true };
     }
@@ -463,7 +506,8 @@ export class YouTubeService {
       return { success: true };
     } catch (err: any) {
       this.logger.error(`Erro ao curtir vídeo ${youtubeVideoId}: ${err.message}`);
-      return { success: false, error: err.message };
+      const { message, isQuota } = this.describeYouTubeError(err);
+      return { success: false, error: message, isQuota };
     }
   }
 }

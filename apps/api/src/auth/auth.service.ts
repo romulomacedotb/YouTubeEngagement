@@ -45,6 +45,34 @@ export class AuthService {
   }
 
   /**
+   * Resolves effective OAuth redirect URI, automatically upgrading localhost URIs
+   * when running in production behind a public URL (e.g. Render / Koyeb).
+   */
+  private resolveEffectiveRedirectUri(configuredUri?: string): string {
+    const publicBase = (
+      process.env.PUBLIC_URL ||
+      process.env.RENDER_EXTERNAL_URL ||
+      process.env.WEB_ORIGIN ||
+      ''
+    ).replace(/\/$/, '');
+
+    const envRedirect =
+      process.env.GOOGLE_REDIRECT_URI?.trim() ||
+      (publicBase && !publicBase.includes('localhost')
+        ? `${publicBase}/api/auth/google/callback`
+        : '');
+
+    const raw = configuredUri?.trim() || '';
+    const isLocalUri = raw.includes('localhost') || raw.includes('127.0.0.1');
+
+    if (process.env.NODE_ENV === 'production' && envRedirect && (!raw || isLocalUri)) {
+      return envRedirect;
+    }
+
+    return raw || envRedirect || 'http://localhost:3000/api/auth/google/callback';
+  }
+
+  /**
    * Instantiates Google OAuth2 client with either database credentials or .env fallback
    */
   getOAuthClient(config?: {
@@ -61,18 +89,14 @@ export class AuthService {
         clientSecret = config.clientSecret;
       }
 
-      const redirectUri =
-        config.redirectUri ||
-        process.env.GOOGLE_REDIRECT_URI ||
-        'http://localhost:3000/api/auth/google/callback';
+      const redirectUri = this.resolveEffectiveRedirectUri(config.redirectUri);
 
       return new google.auth.OAuth2(config.clientId, clientSecret, redirectUri);
     }
 
     const clientId = process.env.GOOGLE_CLIENT_ID || '';
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET || '';
-    const redirectUri =
-      process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/api/auth/google/callback';
+    const redirectUri = this.resolveEffectiveRedirectUri();
 
     return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
   }
@@ -401,10 +425,7 @@ export class AuthService {
     if (!input.clientId?.trim()) throw new BadRequestException('Client ID do Google é obrigatório.');
     if (!input.clientSecret?.trim()) throw new BadRequestException('Client Secret do Google é obrigatório.');
 
-    const redirectUri =
-      input.redirectUri?.trim() ||
-      process.env.GOOGLE_REDIRECT_URI ||
-      'http://localhost:3000/api/auth/google/callback';
+    const redirectUri = this.resolveEffectiveRedirectUri(input.redirectUri);
 
     // If marked as default, unset previous default
     if (input.isDefault) {

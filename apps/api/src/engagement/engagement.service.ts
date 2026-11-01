@@ -338,6 +338,7 @@ export class EngagementService {
     let successCount = 0;
     let skippedCount = 0;
     let errorCount = 0;
+    let quotaExhaustedMessage: string | null = null;
 
     for (const channelId of dto.channelIds) {
       const channel = await this.prisma.channel.findUnique({
@@ -487,65 +488,96 @@ export class EngagementService {
       let liked = false;
       const errors: string[] = [];
 
-      if (shouldLike) {
-        try {
-          const likeRes = await this.youtube.likeVideo(accessToken, video.youtubeVideoId);
-          if (likeRes.success) {
-            liked = true;
-          } else if (likeRes.error) {
-            errors.push(`Curtida: ${likeRes.error}`);
+      if (quotaExhaustedMessage) {
+        // Quota already exhausted earlier in this batch: don't waste calls, record as failure
+        errors.push(`Não enviado: ${quotaExhaustedMessage}`);
+      } else {
+        if (shouldLike) {
+          try {
+            const likeRes = await this.youtube.likeVideo(accessToken, video.youtubeVideoId);
+            if (likeRes.success) {
+              liked = true;
+            } else {
+              errors.push(`Curtida: ${likeRes.error || 'falha desconhecida'}`);
+              if (likeRes.isQuota) quotaExhaustedMessage = likeRes.error || 'Quota esgotada.';
+            }
+          } catch (likeErr: any) {
+            this.logger.error(`Erro ao curtir vídeo ${video.youtubeVideoId} de ${channel.title}: ${likeErr.message}`);
+            errors.push(`Curtida: ${likeErr.message}`);
           }
-        } catch (likeErr: any) {
-          this.logger.error(`Erro ao curtir vídeo ${video.youtubeVideoId} de ${channel.title}: ${likeErr.message}`);
-          errors.push(`Curtida: ${likeErr.message}`);
+        }
+
+        if (shouldComment && !quotaExhaustedMessage) {
+          try {
+            const commentRes = await this.youtube.postComment(accessToken, video.youtubeVideoId, renderedComment);
+            if (commentRes.commentId) {
+              commentSent = true;
+            } else {
+              errors.push(`Comentário: ${commentRes.error || 'falha desconhecida'}`);
+              if (commentRes.isQuota) quotaExhaustedMessage = commentRes.error || 'Quota esgotada.';
+            }
+          } catch (commentErr: any) {
+            this.logger.error(`Erro ao postar comentário no vídeo ${video.youtubeVideoId} de ${channel.title}: ${commentErr.message}`);
+            errors.push(`Comentário: ${commentErr.message}`);
+          }
+        } else if (shouldComment && quotaExhaustedMessage) {
+          errors.push(`Comentário não enviado: ${quotaExhaustedMessage}`);
         }
       }
 
-      if (shouldComment) {
-        try {
-          const commentRes = await this.youtube.postComment(accessToken, video.youtubeVideoId, renderedComment);
-          if (commentRes.commentId) {
-            commentSent = true;
-          } else if (commentRes.error) {
-            errors.push(`Comentário: ${commentRes.error}`);
-          }
-        } catch (commentErr: any) {
-          this.logger.error(`Erro ao postar comentário no vídeo ${video.youtubeVideoId} de ${channel.title}: ${commentErr.message}`);
-          errors.push(`Comentário: ${commentErr.message}`);
-        }
-      }
-
-      const hasSucceeded = commentSent || liked;
-      if (hasSucceeded) {
+      // Success only when every requested action actually worked
+      const requestedAll = (!shouldComment || commentSent) && (!shouldLike || liked);
+      const hasPartial = commentSent || liked;
+      if (requestedAll && errors.length === 0) {
         successCount++;
       } else {
         errorCount++;
       }
 
-      // Persist engagement action record
-      let recordType: EngagementActionType = 'COMMENT';
-      if (commentSent && liked) {
-        recordType = 'COMMENT_AND_LIKE';
-      } else if (liked) {
-        recordType = 'LIKE';
+      // Persist ONLY what really happened (never mark comment/like that failed)
+      const now = new Date();
+      if (hasPartial) {
+        const recordType: EngagementActionType =
+          commentSent && liked ? 'COMMENT_AND_LIKE' : liked ? 'LIKE' : 'COMMENT';
+        await this.prisma.engagementAction.create({
+          data: {
+            channelId: channel.id,
+            videoId: video.id,
+            type: recordType,
+            status: 'EXECUTED',
+            commentText: commentSent ? renderedComment : null,
+            notes: `Lote: ${liked ? 'curtido ' : ''}${commentSent ? 'comentado' : ''}`.trim(),
+            confirmedAt: now,
+            executedAt: now,
+            error: errors.length > 0 ? errors.join('; ') : null,
+          },
+        });
       }
 
-      const status = hasSucceeded ? 'EXECUTED' : 'FAILED';
-      const now = new Date();
+      if (errors.length > 0) {
+        const failedType: EngagementActionType =
+          shouldComment && !commentSent && shouldLike && !liked
+            ? 'COMMENT_AND_LIKE'
+            : shouldComment && !commentSent
+              ? 'COMMENT'
+              : 'LIKE';
+        await this.prisma.engagementAction.create({
+          data: {
+            channelId: channel.id,
+            videoId: video.id,
+            type: failedType,
+            status: 'FAILED',
+            commentText: shouldComment && !commentSent ? renderedComment : null,
+            notes: 'Lote: falha na execução',
+            confirmedAt: now,
+            executedAt: null,
+            error: errors.join('; '),
+          },
+        });
+      }
 
-      await this.prisma.engagementAction.create({
-        data: {
-          channelId: channel.id,
-          videoId: video.id,
-          type: recordType,
-          status,
-          commentText: commentSent ? renderedComment : null,
-          notes: `Lote: ${liked ? 'curtido ' : ''}${commentSent ? 'comentado' : ''}`,
-          confirmedAt: now,
-          executedAt: hasSucceeded ? now : null,
-          error: errors.length > 0 ? errors.join('; ') : null,
-        },
-      });
+      const status = errors.length === 0 ? 'EXECUTED' : hasPartial ? 'PARTIAL' : 'FAILED';
+      const recordType = commentSent && liked ? 'COMMENT_AND_LIKE' : liked ? 'LIKE' : 'COMMENT';
 
       await this.prisma.auditLog.create({
         data: {
@@ -576,8 +608,10 @@ export class EngagementService {
         error: errors.length > 0 ? errors.join('; ') : undefined,
       });
 
-      // Small throttling delay to avoid API burst limits
-      await new Promise((r) => setTimeout(r, 150));
+      // Small throttling delay to avoid API burst limits (skip when quota is gone)
+      if (!quotaExhaustedMessage) {
+        await new Promise((r) => setTimeout(r, 150));
+      }
     }
 
     return {
@@ -585,6 +619,8 @@ export class EngagementService {
       successCount,
       skippedCount,
       errorCount,
+      quotaExceeded: !!quotaExhaustedMessage,
+      quotaMessage: quotaExhaustedMessage || undefined,
       results,
     };
   }

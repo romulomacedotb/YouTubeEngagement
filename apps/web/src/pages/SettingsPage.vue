@@ -369,7 +369,14 @@
         <ol class="list-decimal list-inside space-y-1 text-slate-400 pl-1">
           <li>Acesse o <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="text-brand-400 hover:underline">Google Cloud Console &gt; APIs &amp; Services &gt; Credentials</a>.</li>
           <li>Crie ou selecione um <strong>OAuth 2.0 Client ID</strong> do tipo <em>Web Application</em>.</li>
-          <li>Em <strong>Authorized redirect URIs</strong>, adicione exatamente: <code class="text-emerald-400 bg-slate-950 px-1.5 py-0.5 rounded font-mono">http://localhost:3000/api/auth/google/callback</code></li>
+          <li>
+            Em <strong>Authorized redirect URIs</strong>, adicione exatamente:
+            <code
+              @click="copyToClipboard(defaultRedirectUri, 'Redirect URI copiado!')"
+              title="Clique para copiar"
+              class="text-emerald-400 bg-slate-950 px-1.5 py-0.5 rounded font-mono cursor-pointer hover:bg-slate-900"
+            >{{ defaultRedirectUri }}</code>
+          </li>
           <li>Copie o <strong>Client ID</strong> e <strong>Client Secret</strong> gerados e cadastre acima.</li>
           <li>Se marcar <strong>Definir como padrão</strong>, ao clicar em "Conectar Canal" a autenticação usará este canal automaticamente sem perguntar.</li>
         </ol>
@@ -413,6 +420,31 @@
             As rotas <code class="text-brand-300">/api/*</code> e credenciais nunca são armazenadas no cache offline do Service Worker para proteção total dos seus dados.
           </span>
         </div>
+      </div>
+    </div>
+
+    <!-- SQLite Database Backup Card -->
+    <div class="glass-card p-6 sm:p-8 rounded-3xl space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h4 class="text-sm font-semibold text-white">Banco de Dados SQLite (<code class="text-brand-300 font-mono">dev.db</code>)</h4>
+          <p class="text-xs text-slate-400 mt-0.5">
+            Em produção, o arquivo <code class="font-mono text-slate-300">dev.db</code> é replicado continuamente em tempo real. Você também pode baixar uma cópia íntegra e atualizada a qualquer momento.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          :disabled="isDownloadingBackup"
+          @click="handleDownloadBackupDb"
+          class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 border border-slate-700 text-white text-xs font-semibold transition flex items-center gap-2 self-start sm:self-auto"
+        >
+          <span v-if="isDownloadingBackup" class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+          <svg v-else class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          <span>{{ isDownloadingBackup ? 'Gerando Snapshot...' : 'Baixar dev.db Atualizado' }}</span>
+        </button>
       </div>
     </div>
 
@@ -511,7 +543,7 @@
               <input
                 v-model="form.redirectUri"
                 type="text"
-                placeholder="http://localhost:3000/api/auth/google/callback"
+                :placeholder="defaultRedirectUri"
                 class="w-full px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white font-mono text-xs focus:outline-none focus:border-brand-500"
               />
               <p class="text-[11px] text-slate-400 mt-1">
@@ -561,7 +593,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
 import { useAppStore } from '../stores/app';
@@ -573,7 +605,19 @@ const router = useRouter();
 const authStore = useAuthStore();
 const appStore = useAppStore();
 
+const defaultRedirectUri = computed(() => {
+  if (typeof window === 'undefined') {
+    return 'http://localhost:3000/api/auth/google/callback';
+  }
+  const origin = window.location.origin;
+  if (origin.includes(':5173')) {
+    return 'http://localhost:3000/api/auth/google/callback';
+  }
+  return `${origin}/api/auth/google/callback`;
+});
+
 const oauthNotice = ref<{ type: 'success' | 'error'; message: string } | null>(null);
+const isDownloadingBackup = ref(false);
 
 // Google Clients State
 const clientList = ref<GoogleClientConfigDto[]>([]);
@@ -587,7 +631,7 @@ const form = ref({
   name: '',
   clientId: '',
   clientSecret: '',
-  redirectUri: 'http://localhost:3000/api/auth/google/callback',
+  redirectUri: defaultRedirectUri.value,
   isDefault: false,
 });
 
@@ -609,7 +653,7 @@ function openCreateModal() {
     name: '',
     clientId: '',
     clientSecret: '',
-    redirectUri: 'http://localhost:3000/api/auth/google/callback',
+    redirectUri: defaultRedirectUri.value,
     isDefault: clientList.value.length === 0, // default if first
   };
   showSecret.value = false;
@@ -693,6 +737,39 @@ async function handleDeleteClient(client: GoogleClientConfigDto) {
 function copyToClipboard(text: string, msg: string) {
   navigator.clipboard.writeText(text);
   appStore.showToast(msg, 'success');
+}
+
+async function handleDownloadBackupDb() {
+  isDownloadingBackup.value = true;
+  try {
+    const response = await fetch('/api/health/backup-db', {
+      method: 'GET',
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      throw new Error(
+        errBody.message || 'Conecte um canal autenticado antes de baixar o dev.db.',
+      );
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'dev.db';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+
+    appStore.showToast('Arquivo dev.db atualizado baixado com sucesso!', 'success');
+  } catch (err: any) {
+    appStore.showToast(err.message || 'Falha ao baixar o arquivo dev.db.', 'error');
+  } finally {
+    isDownloadingBackup.value = false;
+  }
 }
 
 async function handleLogout() {
