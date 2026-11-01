@@ -6,6 +6,8 @@ dist
 dist-electron
 coverage
 dev-dist
+*.tsbuildinfo
+**/*.tsbuildinfo
 
 # Desktop app source (excluded from cloud image; package.json kept for npm workspaces lockfile)
 apps/desktop/src
@@ -34,4 +36,3 @@ prisma/*.db-*
 .idea
 README.md
 plano-execucao-youtube-engagement.md
-

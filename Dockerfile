@@ -27,9 +27,10 @@ COPY packages/shared ./packages/shared
 COPY apps/web ./apps/web
 COPY apps/api ./apps/api
 
-# Generate Prisma Client & build shared -> web -> api
+# Generate Prisma Client & clean-build shared -> web -> api
 RUN npx prisma generate
-RUN npm run build --workspace=@youtube-engagement/shared \
+RUN rm -f packages/shared/tsconfig.tsbuildinfo apps/api/*.tsbuildinfo \
+ && npm run build --workspace=@youtube-engagement/shared \
  && npm run build --workspace=@youtube-engagement/web \
  && npm run build --workspace=@youtube-engagement/api
 
@@ -78,4 +79,3 @@ RUN sed -i 's/\r$//' /app/docker/entrypoint.sh && chmod +x /app/docker/entrypoin
 EXPOSE 3000
 
 ENTRYPOINT ["/app/docker/entrypoint.sh"]
-
